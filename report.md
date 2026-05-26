@@ -229,10 +229,10 @@ street    501
 
 `rocm-smi` 观察到 GPU[0] 使用率达到 `99% - 100%`，说明训练确实在显卡上执行。
 
-本实验每个类别抽取 800 张训练图片、200 张测试图片，并统一缩放到 `96 x 96`。模型结构如下：
+为了提高分类指标，本实验改为使用完整训练集和完整测试集，并将输入图片统一缩放到 `128 x 128`。读取图片后使用 ImageNet 常用均值和标准差进行标准化。模型结构如下：
 
 ```text
-输入: 3 x 96 x 96
+输入: 3 x 128 x 128
 
 卷积块 1:
 Conv2d(3 -> 32, kernel=3, padding=1, bias=false)
@@ -242,7 +242,7 @@ Conv2d(32 -> 32, kernel=3, padding=1, bias=false)
 BatchNorm2d(32)
 ReLU
 MaxPool2d(kernel=2)
-输出: 32 x 48 x 48
+输出: 32 x 64 x 64
 
 卷积块 2:
 Conv2d(32 -> 64, kernel=3, padding=1, bias=false)
@@ -252,7 +252,7 @@ Conv2d(64 -> 64, kernel=3, padding=1, bias=false)
 BatchNorm2d(64)
 ReLU
 MaxPool2d(kernel=2)
-输出: 64 x 24 x 24
+输出: 64 x 32 x 32
 
 卷积块 3:
 Conv2d(64 -> 128, kernel=3, padding=1, bias=false)
@@ -262,7 +262,7 @@ Conv2d(128 -> 128, kernel=3, padding=1, bias=false)
 BatchNorm2d(128)
 ReLU
 MaxPool2d(kernel=2)
-输出: 128 x 12 x 12
+输出: 128 x 16 x 16
 
 卷积块 4:
 Conv2d(128 -> 256, kernel=3, padding=1, bias=false)
@@ -272,43 +272,59 @@ Conv2d(256 -> 256, kernel=3, padding=1, bias=false)
 BatchNorm2d(256)
 ReLU
 MaxPool2d(kernel=2)
-输出: 256 x 6 x 6
+输出: 256 x 8 x 8
+
+卷积块 5:
+Conv2d(256 -> 512, kernel=3, padding=1, bias=false)
+BatchNorm2d(512)
+ReLU
+Conv2d(512 -> 512, kernel=3, padding=1, bias=false)
+BatchNorm2d(512)
+ReLU
+MaxPool2d(kernel=2)
+输出: 512 x 4 x 4
 
 分类器:
 AdaptiveAvgPool2d(1 x 1)
 Flatten
-Dropout(0.4)
-Linear(256 -> 6)
+Dropout(0.5)
+Linear(512 -> 6)
 ```
 
-模型可训练参数量为 1174758。损失函数使用交叉熵损失：
+模型可训练参数量为 4717286。损失函数使用交叉熵损失：
 
 ```text
 loss = cross_entropy(logits, labels)
 ```
 
-优化器使用 AdamW，学习率为 `1e-3`，训练 12 轮。训练过程中对训练 batch 使用随机水平翻转和随机裁剪作为数据增强。
+优化器使用 AdamW，初始学习率为 `1e-3`，训练 18 轮。第 11 轮开始学习率衰减到 `3e-4`，第 16 轮开始衰减到 `1e-4`。训练过程中对训练 batch 使用随机水平翻转和随机裁剪作为数据增强。
 
 训练结果如下：
 
 ```text
-训练样本: 4800, 测试样本: 1200
-epoch 01: loss=1.0418, train_acc=54.85%, test_acc=51.17%
-epoch 02: loss=0.7217, train_acc=75.88%, test_acc=75.17%
-epoch 03: loss=0.6429, train_acc=78.85%, test_acc=79.25%
-epoch 04: loss=0.5749, train_acc=76.52%, test_acc=73.58%
-epoch 05: loss=0.5240, train_acc=78.77%, test_acc=75.58%
-epoch 06: loss=0.5127, train_acc=82.69%, test_acc=81.17%
-epoch 07: loss=0.4679, train_acc=81.65%, test_acc=80.50%
-epoch 08: loss=0.4426, train_acc=84.79%, test_acc=82.00%
-epoch 09: loss=0.4209, train_acc=85.42%, test_acc=82.67%
-epoch 10: loss=0.3960, train_acc=83.90%, test_acc=81.17%
-epoch 11: loss=0.4030, train_acc=72.79%, test_acc=72.00%
-epoch 12: loss=0.3862, train_acc=81.90%, test_acc=78.17%
+训练样本: 14034, 测试样本: 3000
+epoch 01: lr=1e-3, loss=0.8202, train_acc=77.97%, test_acc=77.93%
+epoch 02: lr=1e-3, loss=0.5550, train_acc=79.75%, test_acc=78.97%
+epoch 03: lr=1e-3, loss=0.4768, train_acc=81.34%, test_acc=81.47%
+epoch 04: lr=1e-3, loss=0.4185, train_acc=83.91%, test_acc=83.07%
+epoch 05: lr=1e-3, loss=0.3879, train_acc=84.36%, test_acc=82.80%
+epoch 06: lr=1e-3, loss=0.3766, train_acc=81.27%, test_acc=80.57%
+epoch 07: lr=1e-3, loss=0.3485, train_acc=80.74%, test_acc=79.70%
+epoch 08: lr=1e-3, loss=0.3166, train_acc=83.15%, test_acc=81.13%
+epoch 09: lr=1e-3, loss=0.3101, train_acc=84.25%, test_acc=82.43%
+epoch 10: lr=1e-3, loss=0.2961, train_acc=90.20%, test_acc=88.20%
+epoch 11: lr=3e-4, loss=0.2259, train_acc=93.67%, test_acc=90.13%
+epoch 12: lr=3e-4, loss=0.2121, train_acc=93.41%, test_acc=90.10%
+epoch 13: lr=3e-4, loss=0.2109, train_acc=92.88%, test_acc=90.23%
+epoch 14: lr=3e-4, loss=0.1982, train_acc=94.21%, test_acc=90.53%
+epoch 15: lr=3e-4, loss=0.1856, train_acc=94.68%, test_acc=91.23%
+epoch 16: lr=1e-4, loss=0.1580, train_acc=95.80%, test_acc=91.20%
+epoch 17: lr=1e-4, loss=0.1570, train_acc=95.85%, test_acc=91.23%
+epoch 18: lr=1e-4, loss=0.1472, train_acc=96.06%, test_acc=91.37%
 ```
 
 训练过程可视化如下：
 
 ![Training curves](plots/training_curves.png)
 
-可以看到，模型从随机水平约 `16.67%` 提升到最高 `82.67%` 的测试准确率。第 9 轮之后准确率有波动，说明继续训练时需要更细致地调整学习率，或保存验证集上表现最好的模型。整体上，该 CNN 已经能有效区分建筑、森林、冰川、山地、海洋和街道等场景类别。
+可以看到，模型从随机水平约 `16.67%` 提升到最高 `91.37%` 的测试准确率。相比上一版只使用部分数据和 `96 x 96` 输入时的最高 `82.67%`，完整数据、`128 x 128` 输入、更深的卷积网络、标准化以及学习率衰减带来了明显提升。整体上，该 CNN 已经能较好地区分建筑、森林、冰川、山地、海洋和街道等场景类别。

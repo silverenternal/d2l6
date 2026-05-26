@@ -6,11 +6,11 @@ use tch::vision::image;
 use tch::{Cuda, Device, Kind, Tensor};
 
 const SCENE_CLASSES: [&str; 6] = ["buildings", "forest", "glacier", "mountain", "sea", "street"];
-const IMAGE_SIZE: i64 = 96;
-const TRAIN_PER_CLASS: usize = 800;
-const TEST_PER_CLASS: usize = 200;
+const IMAGE_SIZE: i64 = 128;
+const TRAIN_PER_CLASS: usize = usize::MAX;
+const TEST_PER_CLASS: usize = usize::MAX;
 const BATCH_SIZE: i64 = 64;
-const EPOCHS: i64 = 12;
+const EPOCHS: i64 = 18;
 
 #[derive(Debug)]
 struct ParallelModule<N1, N2> {
@@ -180,9 +180,10 @@ fn scene_cnn(vs: &nn::Path<'_>) -> SequentialT {
         .add(conv_block(&(vs / "block2"), 32, 64))
         .add(conv_block(&(vs / "block3"), 64, 128))
         .add(conv_block(&(vs / "block4"), 128, 256))
+        .add(conv_block(&(vs / "block5"), 256, 512))
         .add_fn(|xs| xs.adaptive_avg_pool2d([1, 1]).flat_view())
-        .add_fn_t(|xs, train| xs.dropout(0.4, train))
-        .add(nn::linear(vs / "head", 256, SCENE_CLASSES.len() as i64, Default::default()))
+        .add_fn_t(|xs, train| xs.dropout(0.5, train))
+        .add(nn::linear(vs / "head", 512, SCENE_CLASSES.len() as i64, Default::default()))
 }
 
 fn image_files(dir: &Path, limit: usize) -> Result<Vec<PathBuf>> {
@@ -197,7 +198,9 @@ fn image_files(dir: &Path, limit: usize) -> Result<Vec<PathBuf>> {
         })
         .collect::<Vec<_>>();
     files.sort();
-    files.truncate(limit);
+    if limit != usize::MAX {
+        files.truncate(limit);
+    }
     Ok(files)
 }
 
@@ -212,7 +215,10 @@ fn load_scene_split(root: &Path, per_class: usize) -> Result<(Tensor, Tensor)> {
         for file in files {
             let img = image::load_and_resize(&file, IMAGE_SIZE, IMAGE_SIZE)
                 .with_context(|| format!("读取图片失败: {}", file.display()))?;
-            images.push(img.to_kind(Kind::Float) / 255.0);
+            let img = img.to_kind(Kind::Float) / 255.0;
+            let mean = Tensor::from_slice(&[0.485_f32, 0.456, 0.406]).reshape([3, 1, 1]);
+            let std = Tensor::from_slice(&[0.229_f32, 0.224, 0.225]).reshape([3, 1, 1]);
+            images.push((img - mean) / std);
             labels.push(label as i64);
         }
     }
@@ -268,11 +274,21 @@ fn run_scene_classification(device: Device) -> Result<()> {
     let vs = nn::VarStore::new(device);
     let net = scene_cnn(&vs.root());
     let params: usize = vs.trainable_variables().iter().map(|t| t.numel()).sum();
-    println!("CNN 结构: Conv-BN-ReLU-Pool x4 -> AdaptiveAvgPool -> Dropout -> Linear");
+    println!("CNN 结构: Conv-BN-ReLU-Pool x5 -> AdaptiveAvgPool -> Dropout -> Linear");
     println!("可训练参数量: {params}");
 
     let mut optimizer = nn::AdamW::default().build(&vs, 1e-3)?;
+    let mut best_test_acc = 0.0;
+    let mut best_epoch = 0;
     for epoch in 1..=EPOCHS {
+        let lr = if epoch <= 10 {
+            1e-3
+        } else if epoch <= 15 {
+            3e-4
+        } else {
+            1e-4
+        };
+        optimizer.set_lr(lr);
         let mut total_loss = 0.0;
         let mut batches = 0;
         for (batch_images, batch_labels) in tch::data::Iter2::new(&train_images, &train_labels, BATCH_SIZE)
@@ -289,11 +305,16 @@ fn run_scene_classification(device: Device) -> Result<()> {
 
         let train_acc = evaluate_accuracy(&net, &train_images, &train_labels, device);
         let test_acc = evaluate_accuracy(&net, &test_images, &test_labels, device);
+        if test_acc > best_test_acc {
+            best_test_acc = test_acc;
+            best_epoch = epoch;
+        }
         println!(
-            "epoch {epoch:02}: loss={:.4}, train_acc={:.2}%, test_acc={:.2}%",
+            "epoch {epoch:02}: lr={lr:.0e}, loss={:.4}, train_acc={:.2}%, test_acc={:.2}%, best_test_acc={:.2}%@epoch{best_epoch:02}",
             total_loss / batches as f64,
             train_acc * 100.0,
-            test_acc * 100.0
+            test_acc * 100.0,
+            best_test_acc * 100.0
         );
     }
 
