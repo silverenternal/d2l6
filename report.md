@@ -209,6 +209,12 @@ sea       510
 street    501
 ```
 
+数据可视化结果如下。由于中文字体在当前绘图环境中容易乱码，图中的标题、坐标轴、图例和类别名称均使用英文。
+
+![Class distribution](plots/class_distribution.png)
+
+![Sample images](plots/sample_grid.png)
+
 本实验在 AMD ROCm GPU 上运行。由于 Rust `tch-rs` 默认受系统环境变量影响会链接到 CPU 版 `/opt/libtorch`，本项目使用脚本 `scripts/run_with_rocm.sh` 预加载 ROCm 版 PyTorch 动态库：
 
 ```bash
@@ -300,5 +306,9 @@ epoch 10: loss=0.3960, train_acc=83.90%, test_acc=81.17%
 epoch 11: loss=0.4030, train_acc=72.79%, test_acc=72.00%
 epoch 12: loss=0.3862, train_acc=81.90%, test_acc=78.17%
 ```
+
+训练过程可视化如下：
+
+![Training curves](plots/training_curves.png)
 
 可以看到，模型从随机水平约 `16.67%` 提升到最高 `82.67%` 的测试准确率。第 9 轮之后准确率有波动，说明继续训练时需要更细致地调整学习率，或保存验证集上表现最好的模型。整体上，该 CNN 已经能有效区分建筑、森林、冰川、山地、海洋和街道等场景类别。
