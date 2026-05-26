@@ -2,7 +2,7 @@
 
 ## 一、ParallelModule 并行模块
 
-本次实验使用 Rust 和 `tch-rs` 实现。`ParallelModule` 接收两个子模块 `net1` 和 `net2`，二者都实现 `tch::nn::Module`。前向传播时，同一个输入会分别送入两个子模块，然后将两个输出在特征维度上拼接：
+这一部分用 Rust 和 `tch-rs` 写了一个 `ParallelModule`。它保存两个子模块 `net1` 和 `net2`，前向传播时把同一个输入分别送进两个子模块，再把两个输出按第 1 维拼接。
 
 ```rust
 impl<N1, N2> Module for ParallelModule<N1, N2>
@@ -16,7 +16,7 @@ where
 }
 ```
 
-实验中令输入为 `2 x 4` 的随机张量，`net1` 输出维度为 3，`net2` 输出维度为 2。因此拼接后输出维度为 `2 x 5`。本次使用 ROCm GPU 运行，输出张量类型为 `CUDAFloatType`。
+实验里输入是一个 `2 x 4` 的随机张量。`net1` 输出 3 维，`net2` 输出 2 维，所以拼接以后输出是 `2 x 5`。这次是在 ROCm GPU 上运行的，输出里可以看到张量类型是 `CUDAFloatType`。
 
 运行结果摘录：
 
@@ -32,7 +32,7 @@ where
 [ CUDAFloatType{2,5} ]
 ```
 
-这说明并行模块能够同时保留两个子网络提取到的不同特征，并在后续网络中统一使用。
+输出形状是 `[2, 5]`，和前面的维度计算一致。
 
 ## 二、共享参数层的多层感知机
 
@@ -49,9 +49,9 @@ let h2 = h1.apply(&self.shared).relu();
 let h3 = h2.apply(&self.shared).relu();
 ```
 
-因此，`shared` 层只有一组权重和偏置。反向传播时，这一组参数会同时接收两次使用位置产生的梯度贡献。
+`shared` 层虽然在计算图里用了两次，但参数只保存一份。反向传播时，这一份参数会累加两次调用产生的梯度。
 
-本实验使用合成回归数据训练模型。每轮训练中先执行 `loss.backward()`，然后观察各层参数均值和梯度范数，最后执行优化器更新。
+训练数据是随机生成的回归数据。每轮先算 loss，再执行 `loss.backward()`，然后打印几层权重的均值和梯度范数，最后更新参数。
 
 运行结果摘录：
 
@@ -61,7 +61,7 @@ epoch 04: loss=3.230575; input.w mean=0.1461, shared.w mean=-0.0109, output.w me
 epoch 08: loss=0.906722; input.w mean=0.1373, shared.w mean=0.0039, output.w mean=0.0555; input.w grad_norm=1.5499, shared.w grad_norm=1.5972, output.w grad_norm=1.0541
 ```
 
-可以看到 loss 从 `13.408348` 下降到 `0.906722`，说明模型参数被正常训练；同时 `shared.w` 的参数和梯度每轮都能被观察到，验证了共享层参与了反向传播。
+loss 从 `13.408348` 降到 `0.906722`。`shared.w` 每轮都有梯度范数输出，梯度不是 0。
 
 运行方式：
 
@@ -128,7 +128,7 @@ out = floor((11 + 2 * 0 - 5) / 2) + 1
     = 4
 ```
 
-因此输出特征图大小为：
+输出特征图大小为：
 
 ```text
 4 x 4 x 10
@@ -163,7 +163,7 @@ out = floor((11 + 2 * 0 - 5) / 2) + 1
 out = floor((11 - 2) / 1) + 1 = 10
 ```
 
-池化层不会改变通道数，因此输出大小为：
+池化层不会改变通道数，输出大小为：
 
 ```text
 10 x 10 x 3
@@ -175,7 +175,7 @@ out = floor((11 - 2) / 1) + 1 = 10
 
 ## 四、场景分类 CNN 设计与实验
 
-本次补充使用 Intel Image Classification 场景分类数据集。数据已经下载到：
+场景分类部分使用 Intel Image Classification 数据集。数据放在：
 
 ```text
 data/intel-scenes/
@@ -209,13 +209,13 @@ sea       510
 street    501
 ```
 
-数据可视化结果如下。由于中文字体在当前绘图环境中容易乱码，图中的标题、坐标轴、图例和类别名称均使用英文。
+下面是数据集的简单可视化。画图时中文会乱码，所以图里的标题、坐标轴和类别名称都用英文。
 
 ![Class distribution](plots/class_distribution.png)
 
 ![Sample images](plots/sample_grid.png)
 
-本实验在 AMD ROCm GPU 上运行。由于 Rust `tch-rs` 默认受系统环境变量影响会链接到 CPU 版 `/opt/libtorch`，本项目使用脚本 `scripts/run_with_rocm.sh` 预加载 ROCm 版 PyTorch 动态库：
+训练是在 AMD ROCm GPU 上跑的。本机环境里默认的 `/opt/libtorch` 是 CPU 版，所以运行时使用 `scripts/run_with_rocm.sh` 预加载 ROCm 版 PyTorch 动态库：
 
 ```bash
 ./scripts/run_with_rocm.sh
@@ -227,9 +227,9 @@ street    501
 使用设备: Cuda(0), CUDA/ROCm 可用: true, 设备数: 2
 ```
 
-`rocm-smi` 观察到 GPU[0] 使用率达到 `99% - 100%`，说明训练确实在显卡上执行。
+训练过程中用 `rocm-smi` 看过，GPU[0] 使用率基本在 `99% - 100%`。
 
-为了提高分类指标，本实验改为使用完整训练集和完整测试集，并将输入图片统一缩放到 `128 x 128`。读取图片后使用 ImageNet 常用均值和标准差进行标准化。模型结构如下：
+这次没有再只抽取一部分图片，而是使用完整训练集和完整测试集。图片统一缩放到 `128 x 128`，再按 ImageNet 常用均值和标准差做标准化。模型结构如下：
 
 ```text
 输入: 3 x 128 x 128
@@ -297,7 +297,7 @@ Linear(512 -> 6)
 loss = cross_entropy(logits, labels)
 ```
 
-优化器使用 AdamW，初始学习率为 `1e-3`，训练 18 轮。第 11 轮开始学习率衰减到 `3e-4`，第 16 轮开始衰减到 `1e-4`。训练过程中对训练 batch 使用随机水平翻转和随机裁剪作为数据增强。
+优化器使用 AdamW，初始学习率为 `1e-3`，训练 18 轮。第 11 轮开始把学习率改成 `3e-4`，第 16 轮开始改成 `1e-4`。训练 batch 使用随机水平翻转和随机裁剪。
 
 训练结果如下：
 
@@ -327,4 +327,4 @@ epoch 18: lr=1e-4, loss=0.1472, train_acc=96.06%, test_acc=91.37%
 
 ![Training curves](plots/training_curves.png)
 
-可以看到，模型从随机水平约 `16.67%` 提升到最高 `91.37%` 的测试准确率。相比上一版只使用部分数据和 `96 x 96` 输入时的最高 `82.67%`，完整数据、`128 x 128` 输入、更深的卷积网络、标准化以及学习率衰减带来了明显提升。整体上，该 CNN 已经能较好地区分建筑、森林、冰川、山地、海洋和街道等场景类别。
+最高测试准确率是第 18 轮的 `91.37%`。之前使用部分数据和 `96 x 96` 输入时最高是 `82.67%`，这次改成完整数据、`128 x 128` 输入、5 个卷积块，并加入标准化和学习率衰减后，测试集结果更高。
