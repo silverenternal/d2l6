@@ -1,0 +1,9 @@
+[package]
+name = "d2l6"
+version = "0.1.0"
+edition = "2024"
+build = "build.rs"
+
+[dependencies]
+anyhow = "1"
+tch = "0.23"

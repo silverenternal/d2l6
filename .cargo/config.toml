@@ -1,0 +1,11 @@
+[env]
+LIBTORCH = "/usr"
+LIBTORCH_BYPASS_VERSION_CHECK = "1"
+LD_LIBRARY_PATH = "/usr/lib:/opt/rocm/lib"
+ROCM_PATH = "/opt/rocm"
+
+[build]
+rustflags = [
+  "-C", "link-arg=-Wl,-rpath,/usr/lib",
+  "-C", "link-arg=-Wl,-rpath,/opt/rocm/lib",
+]
