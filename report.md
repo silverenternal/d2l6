@@ -1,5 +1,7 @@
 # 第六次作业报告
 
+GitHub 项目地址：https://github.com/silverenternal/d2l6
+
 ## 一、ParallelModule 并行模块
 
 这一部分用 Rust 和 `tch-rs` 写了一个 `ParallelModule`。它保存两个子模块 `net1` 和 `net2`，前向传播时把同一个输入分别送进两个子模块，再把两个输出按第 1 维拼接。
